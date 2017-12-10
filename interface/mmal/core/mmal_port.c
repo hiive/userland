@@ -43,8 +43,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 
 /// MaOH - Shared memory ipc constants
-///  - shared memory buffer size
-#define SHMBUFFERSIZE 10
 ///  - semaphore timeout in milliseconds
 #define SEMTIMEOUTMS 10
 ///  - shared memory key
@@ -117,7 +115,7 @@ typedef struct MMAL_PORT_PRIVATE_CORE_T
    unsigned int name_size; /** Size of the memory area reserved for the name string */
 
    // ar begin
-   uint32_t frame_count;                /// MaOH - Frame count
+   unsigned int frame_count;            /// MaOH - Frame count
    char *shared_memory;                 /// MaOH - Shared memory pointer for IPC
    int semid;                           /// MaOH - Semaphore id
    struct timespec sem_timeout;         /// MaOH - Shared memory timeout structure
@@ -471,7 +469,7 @@ MMAL_STATUS_T mmal_port_enable(MMAL_PORT_T *port, MMAL_PORT_BH_CB_T cb)
    core->sem_release_op.sem_flg = SEM_UNDO;
 
    // MaOH - setup shared memory for framecount
-   if ((core->shmid = shmget(SHMKEY, SHMBUFFERSIZE, IPC_CREAT | 0666)) < 0)
+   if ((core->shmid = shmget(SHMKEY, sizeof(unsigned int), IPC_CREAT | 0666)) < 0)
    {
        LOG_ERROR("Error creating shared memory\n");
    }
@@ -1015,12 +1013,9 @@ void mmal_port_buffer_header_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *b
        }
        else
        {
-          //MaOH - cast the framecount as a string, it make consumption in other languages much easier
-          char sFrameCount[SHMBUFFERSIZE];
-          sprintf(sFrameCount, "%" PRIu32, port->priv->core->frame_count);
-
           //MaOH - copy framecount to shared memory segment
-          memcpy(port->priv->core->shared_memory, &sFrameCount, sizeof(sFrameCount));
+          // memcpy(port->priv->core->shared_memory, &sFrameCount, sizeof(sFrameCount));
+          memcpy(port->priv->core->shared_memory, &port->priv->core->frame_count, sizeof(unsigned int));
           if ((semop(port->priv->core->semid, &port->priv->core->sem_release_op, 1)) < 0)
           {
               LOG_ERROR("Could not perform shared memory semaphore release operation");
