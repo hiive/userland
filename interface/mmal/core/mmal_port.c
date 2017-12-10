@@ -34,6 +34,24 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/mmal_parameters.h"
 #include <stdio.h>
+// ar begin
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <time.h>
+#include <errno.h>
+
+/// MaOH - Shared memory ipc constants
+///  - shared memory buffer size
+#define SHMBUFFERSIZE 10
+///  - semaphore timeout in milliseconds
+#define SEMTIMEOUTMS 10
+///  - shared memory key
+const key_t SHMKEY = 20170920;
+///  - semaphore key
+const key_t SEMKEY = 20170921;
+// ar end
 
 #ifdef _VIDEOCORE
 #include "vcfw/rtos/common/rtos_common_mem.h" /* mem_alloc */
@@ -97,6 +115,16 @@ typedef struct MMAL_PORT_PRIVATE_CORE_T
 
    char *name; /**< Port name */
    unsigned int name_size; /** Size of the memory area reserved for the name string */
+
+   // ar begin
+   uint32_t frame_count;                /// MaOH - Frame count
+   char *shared_memory;                 /// MaOH - Shared memory pointer for IPC
+   int semid;                           /// MaOH - Semaphore id
+   struct timespec sem_timeout;         /// MaOH - Shared memory timeout structure
+   struct sembuf sem_acquire_op;        /// MaOH - Shared memory acquire semaphore operation
+   struct sembuf sem_release_op;        /// MaOH - Shared memory release semaphore operation
+   int shmid;
+   // ar end
 } MMAL_PORT_PRIVATE_CORE_T;
 
 /*****************************************************************************
@@ -421,6 +449,52 @@ MMAL_STATUS_T mmal_port_enable(MMAL_PORT_T *port, MMAL_PORT_BH_CB_T cb)
       goto error;
    }
 
+   // ar begin
+   //MaOH - shared memory variables
+   core->frame_count = 0;
+   // - shared memory id
+   core->shmid = -1;
+   // - shared memory string
+   core->shared_memory = NULL;
+   // - semaphore id
+   core->semid = -1;
+   // - semaphore timeout
+   core->sem_timeout.tv_sec = SEMTIMEOUTMS / 1000;
+   core->sem_timeout.tv_nsec = (SEMTIMEOUTMS % 1000) * 1000000;
+   // - semaphore operation (acquire)
+   core->sem_acquire_op.sem_num = 0;
+   core->sem_acquire_op.sem_op = -1;
+   core->sem_acquire_op.sem_flg = SEM_UNDO;
+   // - semaphore operation (release)
+   core->sem_release_op.sem_num = 0;
+   core->sem_release_op.sem_op = 1;
+   core->sem_release_op.sem_flg = SEM_UNDO;
+
+   // MaOH - setup shared memory for framecount
+   if ((core->shmid = shmget(SHMKEY, SHMBUFFERSIZE, IPC_CREAT | 0666)) < 0)
+   {
+       LOG_ERROR("Error creating shared memory\n");
+   }
+   if ((core->shared_memory = shmat(core->shmid, NULL, 0)) == (char *) -1) 
+   {
+       LOG_ERROR("Error attaching shared memory\n");
+   }
+   // MaOH - setup shared memory semaphore
+   if ((core->semid = semget(SEMKEY, 1, IPC_CREAT | 0666)) < 0)
+   {
+       LOG_ERROR("Error created shared memory semaphore\n");
+   }
+   if (core->semid != -1)
+   {
+       //Set semaphore initial value to 1
+       semctl(core->semid,0,SETVAL,1);
+
+       // MaOH - Persist shared memory values into callback data
+       //  - Set frame count
+       core->frame_count = 0;
+   }
+   // ar end
+
    /* Enable the output port of a connection last */
    if (connected_port && connected_port->type != MMAL_PORT_TYPE_INPUT)
    {
@@ -656,6 +730,18 @@ static MMAL_STATUS_T mmal_port_disable_internal(MMAL_PORT_T *port)
    MMAL_BUFFER_HEADER_T *buffer;
 
    LOCK_PORT(port);
+
+   // ar begin
+   if (core->semid != -1)
+   {
+       //MaOH - remove semaphore
+       semctl(core->semid, 0, IPC_RMID);
+       //MaOH - detach and remove shared memory
+       shmdt(core->shared_memory);
+       shmctl(core->shmid, IPC_RMID, NULL);
+       core->semid = -1;
+   }
+   // ar end
 
    if (!port->is_enabled)
       goto end;
@@ -912,6 +998,36 @@ void mmal_port_buffer_header_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *b
 
    port->priv->core->buffer_header_callback(port, buffer);
 
+   // ar begin
+   //MaOH - if the buffer ends in a frame, increment count and put in shared memory
+   if (buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)
+   {
+       //MaOH - increment frame count
+       port->priv->core->frame_count = port->priv->core->frame_count + 1;
+       //MaOH - acquire semaphore, if it times out just move on, we'll update it next time
+       if ((semtimedop(port->priv->core->semid, &port->priv->core->sem_acquire_op, 1, &port->priv->core->sem_timeout)) < 0)
+       {
+          //MaOH - semaphore has errored - has semaphore not timed out?
+          if (errno != EAGAIN)
+          {
+             LOG_ERROR("Could not perform shared memory semaphore acquire operation: %s", strerror(errno));
+          }
+       }
+       else
+       {
+          //MaOH - cast the framecount as a string, it make consumption in other languages much easier
+          char sFrameCount[SHMBUFFERSIZE];
+          sprintf(sFrameCount, "%" PRIu32, port->priv->core->frame_count);
+
+          //MaOH - copy framecount to shared memory segment
+          memcpy(port->priv->core->shared_memory, &sFrameCount, sizeof(sFrameCount));
+          if ((semop(port->priv->core->semid, &port->priv->core->sem_release_op, 1)) < 0)
+          {
+              LOG_ERROR("Could not perform shared memory semaphore release operation");
+          }
+      }
+   }
+   // ar end
    IN_TRANSIT_DECREMENT(port);
 }
 
