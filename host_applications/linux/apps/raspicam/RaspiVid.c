@@ -2579,11 +2579,11 @@ int main(int argc, const char **argv)
 
    //MaOH - shared memory variables
    // - shared memory id
-   int shmid;
+   int shmid = -1;
    // - shared memory string
-   char *shared_memory;
+   char *shared_memory = NULL;
    // - semaphore id
-   int semid;
+   int semid = -1;
    // - semaphore timeout
    struct timespec sem_timeout;
    sem_timeout.tv_sec = SEMTIMEOUTMS / 1000;
@@ -2769,21 +2769,6 @@ int main(int argc, const char **argv)
          // Set up our userdata - this is passed though to the callback where we need the information.
          state.callback_data.pstate = &state;
          state.callback_data.abort = 0;
-
-         // MaOH - Persist debug data output file handle
-         //callback_data.datafile_handle = dataoutput_file;
-         // MaOH - Persist shared memory values into callback data
-         //  - Set frame count
-         callback_data.frame_count = 0;
-         //  - Set shared memory
-         callback_data.shared_memory = shared_memory;
-         //  - Set semaphore id
-         callback_data.semid = semid;
-         //  - Set semaphore timeout
-         callback_data.sem_timeout = sem_timeout;
-         //  - Set semaphore operations (acquire and release)
-         callback_data.sem_acquire_op = sem_acquire_op;
-         callback_data.sem_release_op = sem_release_op;
 
          if (state.raw_output)
          {
@@ -3021,9 +3006,28 @@ int main(int argc, const char **argv)
                {
                   vcos_log_error("%s: Error created shared memory semaphore\n", __func__);
                }
-               //Set semaphore initial value to 1
-               semctl(semid,0,SETVAL,1);
+               if (semid != -1)
+               {
+                   //Set semaphore initial value to 1
+                   semctl(semid,0,SETVAL,1);
 
+                   // MaOH - Persist debug data output file handle
+                   //callback_data.datafile_handle = dataoutput_file;
+                   // MaOH - Persist debug data output file handle
+                   //callback_data.datafile_handle = dataoutput_file;
+                   // MaOH - Persist shared memory values into callback data
+                   //  - Set frame count
+                   state.callback_data.frame_count = 0;
+                   //  - Set shared memory
+                   state.callback_data.shared_memory = shared_memory;
+                   //  - Set semaphore id
+                   state.callback_data.semid = semid;
+                   //  - Set semaphore timeout
+                   state.callback_data.sem_timeout = sem_timeout;
+                   //  - Set semaphore operations (acquire and release)
+                   state.callback_data.sem_acquire_op = sem_acquire_op;
+                   state.callback_data.sem_release_op = sem_release_op;
+               }
 
                int initialCapturing=state.bCapturing;
                while (running)
@@ -3152,7 +3156,7 @@ error:
           // Remove semaphore
           semctl(semid, 0, IPC_RMID);
           //MaOH - detach and remove shared memory
-          shmdt(shmid);
+          shmdt(shared_memory);
           shmctl(shmid, IPC_RMID, NULL);
       }
 
