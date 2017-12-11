@@ -34,6 +34,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/mmal_parameters.h"
 #include <stdio.h>
+
+/*
 // ar begin
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -50,7 +52,7 @@ const key_t SHMKEY = 20170920;
 ///  - semaphore key
 const key_t SEMKEY = 20170921;
 // ar end
-
+*/
 #ifdef _VIDEOCORE
 #include "vcfw/rtos/common/rtos_common_mem.h" /* mem_alloc */
 #endif
@@ -113,7 +115,7 @@ typedef struct MMAL_PORT_PRIVATE_CORE_T
 
    char *name; /**< Port name */
    unsigned int name_size; /** Size of the memory area reserved for the name string */
-
+/*
    // ar begin
    unsigned int frame_count;            /// MaOH - Frame count
    char *shared_memory;                 /// MaOH - Shared memory pointer for IPC
@@ -123,6 +125,7 @@ typedef struct MMAL_PORT_PRIVATE_CORE_T
    struct sembuf sem_release_op;        /// MaOH - Shared memory release semaphore operation
    int shmid;
    // ar end
+*/
 } MMAL_PORT_PRIVATE_CORE_T;
 
 /*****************************************************************************
@@ -447,6 +450,7 @@ MMAL_STATUS_T mmal_port_enable(MMAL_PORT_T *port, MMAL_PORT_BH_CB_T cb)
       goto error;
    }
 
+/*
    // ar begin
    //MaOH - shared memory variables
    core->frame_count = 0;
@@ -492,7 +496,7 @@ MMAL_STATUS_T mmal_port_enable(MMAL_PORT_T *port, MMAL_PORT_BH_CB_T cb)
        core->frame_count = 0;
    }
    // ar end
-
+*/
    /* Enable the output port of a connection last */
    if (connected_port && connected_port->type != MMAL_PORT_TYPE_INPUT)
    {
@@ -729,6 +733,7 @@ static MMAL_STATUS_T mmal_port_disable_internal(MMAL_PORT_T *port)
 
    LOCK_PORT(port);
 
+/*
    // ar begin
    if (core->semid != -1)
    {
@@ -740,7 +745,7 @@ static MMAL_STATUS_T mmal_port_disable_internal(MMAL_PORT_T *port)
        core->semid = -1;
    }
    // ar end
-
+*/
    if (!port->is_enabled)
       goto end;
 
@@ -996,6 +1001,7 @@ void mmal_port_buffer_header_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *b
 
    port->priv->core->buffer_header_callback(port, buffer);
 
+/*
    // ar begin
    //MaOH - if the buffer ends in a frame, increment count and put in shared memory
    if (buffer->flags & MMAL_BUFFER_HEADER_FLAG_FRAME_END)
@@ -1023,6 +1029,7 @@ void mmal_port_buffer_header_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *b
       }
    }
    // ar end
+*/
    IN_TRANSIT_DECREMENT(port);
 }
 
